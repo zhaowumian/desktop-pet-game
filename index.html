@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>桌面抓宠小游戏</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      font-family: 'Microsoft YaHei', sans-serif;
+      cursor: default;
+    }
+
+    #game-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    .pet {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      cursor: grab;
+      user-select: none;
+      z-index: 1000;
+      transition: transform 0.1s;
+      filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.3));
+    }
+
+    .pet svg {
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .pet.caught {
+      cursor: grabbing;
+      z-index: 1001;
+      transform: scale(1.2);
+      filter: drop-shadow(4px 4px 8px rgba(0,0,0,0.5));
+    }
+
+    .pet.fleeing svg {
+      animation: fleeWobble 0.12s infinite alternate;
+    }
+
+    .pet.fleeing::after {
+      content: '💨';
+      position: absolute;
+      top: -8px;
+      right: -10px;
+      font-size: 20px;
+      pointer-events: none;
+    }
+
+    @keyframes fleeWobble {
+      0% { transform: rotate(-7deg) scale(1.08); }
+      100% { transform: rotate(7deg) scale(1.08); }
+    }
+
+    .pet:hover {
+      transform: scale(1.1);
+    }
+
+    .recycle-bin {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 80px;
+      height: 80px;
+      background: rgba(200, 200, 200, 0.8);
+      border: 3px dashed #666;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      z-index: 999;
+      transition: all 0.3s;
+    }
+
+    .recycle-bin:hover {
+      background: rgba(150, 150, 150, 0.9);
+      transform: scale(1.1);
+    }
+
+    .recycle-bin.drag-over {
+      background: rgba(255, 100, 100, 0.9);
+      border-color: #ff0000;
+      transform: scale(1.2);
+      animation: pulse 0.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1.2); }
+      50% { transform: scale(1.3); }
+    }
+
+    .score-board {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 18px;
+      z-index: 999;
+    }
+
+    .hint {
+      position: absolute;
+      top: 60px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.4);
+      color: white;
+      padding: 5px 15px;
+      border-radius: 15px;
+      font-size: 12px;
+      z-index: 999;
+    }
+
+    .exit-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 36px;
+      height: 36px;
+      background: rgba(220, 53, 69, 0.85);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .exit-btn:hover {
+      background: rgba(200, 35, 50, 1);
+      transform: scale(1.15);
+    }
+
+    .summon-btn {
+      position: absolute;
+      top: 20px;
+      right: 66px;
+      height: 36px;
+      padding: 0 14px;
+      background: rgba(40, 167, 69, 0.85);
+      color: white;
+      border: none;
+      border-radius: 18px;
+      font-size: 14px;
+      cursor: pointer;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .summon-btn:hover {
+      background: rgba(30, 147, 49, 1);
+      transform: scale(1.05);
+    }
+
+    .spawn-notification {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 20px 40px;
+      border-radius: 15px;
+      font-size: 24px;
+      z-index: 2000;
+      animation: fadeInOut 2s forwards;
+      pointer-events: none;
+    }
+
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+      50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+    }
+
+    .catch-effect {
+      position: absolute;
+      pointer-events: none;
+      font-size: 30px;
+      animation: catchAnim 0.5s forwards;
+      z-index: 2001;
+    }
+
+    @keyframes catchAnim {
+      0% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(2); }
+    }
+
+    /* 宠物说话气泡（作为 .pet 子元素，随宠物一起移动） */
+    .speech-bubble {
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-bottom: 10px;
+      background: rgba(255, 255, 255, 0.95);
+      color: #333;
+      padding: 7px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      pointer-events: none;
+      animation: bubblePop 0.25s ease-out, bubbleFade 0.5s ease-in 5.5s forwards;
+      z-index: 1002;
+    }
+
+    .speech-bubble::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: rgba(255, 255, 255, 0.95);
+    }
+
+    @keyframes bubblePop {
+      0% { opacity: 0; transform: translateX(-50%) scale(0.6); }
+      100% { opacity: 1; transform: translateX(-50%) scale(1); }
+    }
+
+    @keyframes bubbleFade {
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div class="score-board">
+      已捕捉: <span id="score">0</span> 只
+    </div>
+    <div class="hint">
+      宠物会逃离鼠标，快速点击抓住，拖到回收站消除
+    </div>
+    <button class="exit-btn" id="exitBtn" title="退出游戏">✕</button>
+    <button class="summon-btn" id="summonBtn" title="立即召唤宠物">召唤宠物</button>
+    <div class="recycle-bin" id="recycleBin">
+      🗑️
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const gameContainer = document.getElementById('game-container');
+    const recycleBin = document.getElementById('recycleBin');
+    const scoreElement = document.getElementById('score');
+    const exitBtn = document.getElementById('exitBtn');
+    const summonBtn = document.getElementById('summonBtn');
+
+    let score = 0;
+    let pets = new Map(); // id -> DOM element
+    let caughtPetId = null;
+    let dragOffset = { x: 0, y: 0 };
+    let isAcceptingMouseEvents = false;
+    let lastMouseReport = 0;
+
+    // 切换鼠标穿透状态：在交互元素上接收事件，其他区域穿透
+    function updateMousePassthrough(x, y) {
+      // 正在拖拽宠物时必须接收事件
+      if (caughtPetId !== null) {
+        if (!isAcceptingMouseEvents) {
+          isAcceptingMouseEvents = true;
+          ipcRenderer.send('set-ignore-mouse-events', false);
+        }
+        return;
+      }
+      const target = document.elementFromPoint(x, y);
+      const isInteractive = target && (
+        target.closest('.pet') ||
+        target.closest('.recycle-bin') ||
+        target.closest('.exit-btn') ||
+        target.closest('.summon-btn') ||
+        target.closest('.score-board') ||
+        target.closest('.hint')
+      );
+
+      if (isInteractive && !isAcceptingMouseEvents) {
+        isAcceptingMouseEvents = true;
+        ipcRenderer.send('set-ignore-mouse-events', false);
+      } else if (!isInteractive && isAcceptingMouseEvents) {
+        isAcceptingMouseEvents = false;
+        ipcRenderer.send('set-ignore-mouse-events', true);
+      }
+    }
+
+    // 退出按钮
+    exitBtn.addEventListener('click', () => {
+      ipcRenderer.send('app-quit');
+    });
+
+    // 召唤按钮
+    summonBtn.addEventListener('click', () => {
+      ipcRenderer.send('spawn-pet-now');
+    });
+
+    // 六种宠物的SVG全身像
+    const PET_SVGS = {
+      '小猫': `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- 尾巴 -->
+        <path d="M48 38 Q56 34 56 26 Q56 20 50 22" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <!-- 身体 -->
+        <ellipse cx="30" cy="40" rx="18" ry="14" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <!-- 条纹 -->
+        <path d="M24 30 L24 48" stroke="#D8852A" stroke-width="1.5" fill="none"/>
+        <path d="M34 28 L34 50" stroke="#D8852A" stroke-width="1.5" fill="none"/>
+        <!-- 腿 -->
+        <rect x="18" y="48" width="6" height="9" rx="2" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <rect x="34" y="48" width="6" height="9" rx="2" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <!-- 头 -->
+        <circle cx="30" cy="22" r="13" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <!-- 耳朵 -->
+        <path d="M19 16 L17 6 L26 12 Z" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <path d="M41 16 L43 6 L34 12 Z" fill="#F2A03D" stroke="#D8852A" stroke-width="1.5"/>
+        <path d="M21 13 L20 9 L24 12 Z" fill="#FFB6C1"/>
+        <path d="M39 13 L40 9 L36 12 Z" fill="#FFB6C1"/>
+        <!-- 眼睛 -->
+        <circle cx="25" cy="22" r="2.5" fill="#333"/>
+        <circle cx="35" cy="22" r="2.5" fill="#333"/>
+        <circle cx="25.5" cy="21" r="0.8" fill="#fff"/>
+        <circle cx="35.5" cy="21" r="0.8" fill="#fff"/>
+        <!-- 鼻子 -->
+        <path d="M28 27 L30 29 L32 27 Z" fill="#E8867A"/>
+        <!-- 嘴 -->
+        <path d="M30 29 Q27 32 25 30" stroke="#333" stroke-width="1.2" fill="none"/>
+        <path d="M30 29 Q33 32 35 30" stroke="#333" stroke-width="1.2" fill="none"/>
+        <!-- 胡须 -->
+        <line x1="18" y1="26" x2="10" y2="24" stroke="#999" stroke-width="0.8"/>
+        <line x1="18" y1="28" x2="10" y2="29" stroke="#999" stroke-width="0.8"/>
+        <line x1="42" y1="26" x2="50" y2="24" stroke="#999" stroke-width="0.8"/>
+        <line x1="42" y1="28" x2="50" y2="29" stroke="#999" stroke-width="0.8"/>
+      </svg>`,
+      '小狗': `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- 尾巴 -->
+        <path d="M48 36 Q56 32 52 24" fill="#A0522D" stroke="#7B3F1E" stroke-width="1.5" stroke-linecap="round"/>
+        <!-- 身体 -->
+        <ellipse cx="30" cy="40" rx="17" ry="13" fill="#A0522D" stroke="#7B3F1E" stroke-width="1.5"/>
+        <!-- 白肚皮 -->
+        <ellipse cx="30" cy="44" rx="8" ry="6" fill="#F5DEB3"/>
+        <!-- 腿 -->
+        <rect x="18" y="48" width="6" height="9" rx="2" fill="#A0522D" stroke="#7B3F1E" stroke-width="1.5"/>
+        <rect x="34" y="48" width="6" height="9" rx="2" fill="#A0522D" stroke="#7B3F1E" stroke-width="1.5"/>
+        <!-- 头 -->
+        <circle cx="30" cy="22" r="13" fill="#A0522D" stroke="#7B3F1E" stroke-width="1.5"/>
+        <!-- 垂耳 -->
+        <ellipse cx="17" cy="22" rx="5" ry="9" fill="#8B4513" stroke="#7B3F1E" stroke-width="1.5" transform="rotate(-15 17 22)"/>
+        <ellipse cx="43" cy="22" rx="5" ry="9" fill="#8B4513" stroke="#7B3F1E" stroke-width="1.5" transform="rotate(15 43 22)"/>
+        <!-- 斑点 -->
+        <circle cx="36" cy="16" r="3" fill="#8B4513"/>
+        <!-- 眼睛 -->
+        <circle cx="25" cy="22" r="2.5" fill="#333"/>
+        <circle cx="35" cy="22" r="2.5" fill="#333"/>
+        <circle cx="25.5" cy="21" r="0.8" fill="#fff"/>
+        <circle cx="35.5" cy="21" r="0.8" fill="#fff"/>
+        <!-- 鼻子 -->
+        <ellipse cx="30" cy="27" rx="2.5" ry="2" fill="#333"/>
+        <!-- 嘴 -->
+        <path d="M30 29 L30 32" stroke="#333" stroke-width="1.2"/>
+        <path d="M30 32 Q27 34 25 32" stroke="#333" stroke-width="1.2" fill="none"/>
+        <path d="M30 32 Q33 34 35 32" stroke="#333" stroke-width="1.2" fill="none"/>
+        <!-- 舌头 -->
+        <ellipse cx="30" cy="34" rx="2" ry="1.5" fill="#FF69B4"/>
+      </svg>`,
+      '兔子': `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- 身体 -->
+        <ellipse cx="30" cy="42" rx="16" ry="12" fill="#E8E8E8" stroke="#BBB" stroke-width="1.5"/>
+        <!-- 腿 -->
+        <ellipse cx="20" cy="50" rx="5" ry="4" fill="#E8E8E8" stroke="#BBB" stroke-width="1.5"/>
+        <ellipse cx="40" cy="50" rx="5" ry="4" fill="#E8E8E8" stroke="#BBB" stroke-width="1.5"/>
+        <!-- 棉球尾 -->
+        <circle cx="47" cy="40" r="4" fill="#FFF" stroke="#BBB" stroke-width="1"/>
+        <!-- 头 -->
+        <circle cx="30" cy="22" r="12" fill="#E8E8E8" stroke="#BBB" stroke-width="1.5"/>
+        <!-- 长耳朵 -->
+        <ellipse cx="25" cy="6" rx="3.5" ry="11" fill="#E8E8E8" stroke="#BBB" stroke-width="1.5"/>
+        <ellipse cx="35" cy="6" rx="3.5" ry="11" fill="#E8E8E8" stroke="#BBB" stroke-width="1.5"/>
+        <ellipse cx="25" cy="7" rx="2" ry="8" fill="#FFB6C1"/>
+        <ellipse cx="35" cy="7" rx="2" ry="8" fill="#FFB6C1"/>
+        <!-- 眼睛 -->
+        <circle cx="26" cy="22" r="2.5" fill="#333"/>
+        <circle cx="34" cy="22" r="2.5" fill="#333"/>
+        <circle cx="26.5" cy="21" r="0.8" fill="#fff"/>
+        <circle cx="34.5" cy="21" r="0.8" fill="#fff"/>
+        <!-- 鼻子 -->
+        <path d="M28 27 L30 29 L32 27 Z" fill="#FF9CA8"/>
+        <!-- 嘴 -->
+        <path d="M30 29 L30 31" stroke="#333" stroke-width="1"/>
+        <path d="M30 31 Q27 33 25 31" stroke="#333" stroke-width="1" fill="none"/>
+        <path d="M30 31 Q33 33 35 31" stroke="#333" stroke-width="1" fill="none"/>
+        <!-- 腮红 -->
+        <circle cx="22" cy="25" r="2" fill="#FFC0CB" opacity="0.5"/>
+        <circle cx="38" cy="25" r="2" fill="#FFC0CB" opacity="0.5"/>
+      </svg>`,
+      '仓鼠': `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- 身体 -->
+        <ellipse cx="32" cy="38" rx="20" ry="18" fill="#E8C468" stroke="#C4A04A" stroke-width="1.5"/>
+        <!-- 白肚皮 -->
+        <ellipse cx="32" cy="44" rx="12" ry="10" fill="#FFF8E7"/>
+        <!-- 小耳朵 -->
+        <circle cx="22" cy="16" r="4" fill="#E8C468" stroke="#C4A04A" stroke-width="1.5"/>
+        <circle cx="42" cy="16" r="4" fill="#E8C468" stroke="#C4A04A" stroke-width="1.5"/>
+        <circle cx="22" cy="16" r="2" fill="#FFB6C1"/>
+        <circle cx="42" cy="16" r="2" fill="#FFB6C1"/>
+        <!-- 腮帮 -->
+        <circle cx="20" cy="34" r="5" fill="#F5D68A" opacity="0.6"/>
+        <circle cx="44" cy="34" r="5" fill="#F5D68A" opacity="0.6"/>
+        <!-- 眼睛 -->
+        <circle cx="26" cy="28" r="2.5" fill="#333"/>
+        <circle cx="38" cy="28" r="2.5" fill="#333"/>
+        <circle cx="26.5" cy="27" r="0.8" fill="#fff"/>
+        <circle cx="38.5" cy="27" r="0.8" fill="#fff"/>
+        <!-- 鼻子 -->
+        <ellipse cx="32" cy="33" rx="1.5" ry="1.2" fill="#D8867A"/>
+        <!-- 嘴 -->
+        <path d="M32 35 Q29 38 27 36" stroke="#333" stroke-width="1.2" fill="none"/>
+        <path d="M32 35 Q35 38 37 36" stroke="#333" stroke-width="1.2" fill="none"/>
+        <!-- 小脚 -->
+        <ellipse cx="24" cy="55" rx="4" ry="2.5" fill="#E8C468" stroke="#C4A04A" stroke-width="1.5"/>
+        <ellipse cx="40" cy="55" rx="4" ry="2.5" fill="#E8C468" stroke="#C4A04A" stroke-width="1.5"/>
+      </svg>`,
+      '小鸟': `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- 身体 -->
+        <ellipse cx="30" cy="36" rx="16" ry="14" fill="#FFD633" stroke="#E8B82E" stroke-width="1.5"/>
+        <!-- 翅膀 -->
+        <path d="M30 30 Q22 36 20 48 Q28 46 34 38 Z" fill="#F5C518" stroke="#D4A714" stroke-width="1.5"/>
+        <!-- 头 -->
+        <circle cx="34" cy="20" r="9" fill="#FFD633" stroke="#E8B82E" stroke-width="1.5"/>
+        <!-- 鸡冠 -->
+        <path d="M30 11 Q32 5 34 10 Q36 5 38 10 Q40 5 42 10" fill="#FF6B6B" stroke="#E55" stroke-width="1"/>
+        <!-- 喙 -->
+        <path d="M42 20 L48 22 L42 24 Z" fill="#FF9933" stroke="#E67E00" stroke-width="1"/>
+        <!-- 眼睛 -->
+        <circle cx="36" cy="18" r="2.5" fill="#333"/>
+        <circle cx="36.5" cy="17" r="0.8" fill="#fff"/>
+        <!-- 尾羽 -->
+        <path d="M14 36 L6 30 L8 36 L6 42 Z" fill="#F5C518" stroke="#D4A714" stroke-width="1.5"/>
+        <!-- 腿 -->
+        <line x1="26" y1="50" x2="26" y2="56" stroke="#FF9933" stroke-width="2" stroke-linecap="round"/>
+        <line x1="34" y1="50" x2="34" y2="56" stroke="#FF9933" stroke-width="2" stroke-linecap="round"/>
+        <!-- 爪 -->
+        <path d="M24 56 L22 58 M26 56 L26 58 M28 56 L30 58" stroke="#FF9933" stroke-width="1.5"/>
+        <path d="M32 56 L30 58 M34 56 L34 58 M36 56 L38 58" stroke="#FF9933" stroke-width="1.5"/>
+      </svg>`,
+      '乌龟': `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <!-- 后腿 -->
+        <ellipse cx="14" cy="42" rx="5" ry="4" fill="#6B9E3F" stroke="#4A7A26" stroke-width="1.5"/>
+        <ellipse cx="46" cy="42" rx="5" ry="4" fill="#6B9E3F" stroke="#4A7A26" stroke-width="1.5"/>
+        <!-- 尾巴 -->
+        <path d="M50 38 Q56 38 56 34" stroke="#6B9E3F" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <!-- 龟壳 -->
+        <ellipse cx="30" cy="34" rx="18" ry="13" fill="#5B9A3E" stroke="#3D6B26" stroke-width="1.5"/>
+        <!-- 龟壳花纹 -->
+        <path d="M30 22 L30 46" stroke="#3D6B26" stroke-width="1" fill="none"/>
+        <path d="M12 34 L48 34" stroke="#3D6B26" stroke-width="1" fill="none"/>
+        <path d="M18 26 L18 42" stroke="#3D6B26" stroke-width="0.8" fill="none"/>
+        <path d="M42 26 L42 42" stroke="#3D6B26" stroke-width="0.8" fill="none"/>
+        <path d="M24 24 Q30 28 36 24" stroke="#3D6B26" stroke-width="0.8" fill="none"/>
+        <path d="M24 44 Q30 40 36 44" stroke="#3D6B26" stroke-width="0.8" fill="none"/>
+        <!-- 龟壳高光 -->
+        <ellipse cx="24" cy="28" rx="4" ry="2" fill="#7BB85A" opacity="0.5"/>
+        <!-- 头 -->
+        <circle cx="10" cy="30" r="7" fill="#6B9E3F" stroke="#4A7A26" stroke-width="1.5"/>
+        <!-- 前腿 -->
+        <ellipse cx="16" cy="44" rx="4" ry="3" fill="#6B9E3F" stroke="#4A7A26" stroke-width="1.5"/>
+        <ellipse cx="44" cy="44" rx="4" ry="3" fill="#6B9E3F" stroke="#4A7A26" stroke-width="1.5"/>
+        <!-- 眼睛 -->
+        <circle cx="7" cy="29" r="2" fill="#333"/>
+        <circle cx="7.3" cy="28.5" r="0.6" fill="#fff"/>
+        <!-- 嘴 -->
+        <path d="M5 32 Q3 34 4 35" stroke="#333" stroke-width="1" fill="none"/>
+        <!-- 腮红 -->
+        <circle cx="5" cy="31" r="1.5" fill="#FF9CA8" opacity="0.4"/>
+      </svg>`
+    };
+
+    // 监听宠物生成
+    ipcRenderer.on('pet-spawned', (event, pet) => {
+      createPetElement(pet);
+      showNotification(`一只野生的 ${pet.type} 出现了！`);
+    });
+
+    // 监听宠物移动更新
+    ipcRenderer.on('pets-moved', (event, updatedPets) => {
+      updatedPets.forEach(pet => {
+        const element = pets.get(pet.id);
+        if (!element) return;
+        // 切换逃跑状态样式
+        element.classList.toggle('fleeing', !!pet.fleeing && !pet.isCaught);
+        if (!pet.isCaught) {
+          element.style.left = pet.x + 'px';
+          element.style.top = pet.y + 'px';
+        }
+      });
+    });
+
+    // 监听捕捉确认
+    ipcRenderer.on('pet-caught-confirmed', (event, petId) => {
+      const element = pets.get(petId);
+      if (element) {
+        element.classList.add('caught');
+        element.classList.remove('fleeing');
+      }
+    });
+
+    // 监听宠物移除
+    ipcRenderer.on('pet-removed', (event, petId) => {
+      const element = pets.get(petId);
+      if (element) {
+        element.remove();
+        pets.delete(petId);
+        score++;
+        scoreElement.textContent = score;
+      }
+    });
+
+    // 创建宠物DOM元素
+    function createPetElement(pet) {
+      const element = document.createElement('div');
+      element.className = 'pet';
+      element.innerHTML = PET_SVGS[pet.type] || pet.emoji;
+      element.style.left = pet.x + 'px';
+      element.style.top = pet.y + 'px';
+      element.dataset.id = pet.id;
+      element.title = pet.type;
+
+      // 鼠标按下事件
+      element.addEventListener('mousedown', (e) => {
+        if (e.button === 0) { // 左键
+          caughtPetId = pet.id;
+          const rect = element.getBoundingClientRect();
+          dragOffset.x = e.clientX - rect.left;
+          dragOffset.y = e.clientY - rect.top;
+          
+          // 通知主进程宠物被抓住
+          ipcRenderer.send('pet-caught', pet.id);
+          
+          // 显示捕捉特效
+          showCatchEffect(e.clientX, e.clientY);
+        }
+      });
+
+      gameContainer.appendChild(element);
+      pets.set(pet.id, element);
+    }
+
+    // 显示通知
+    function showNotification(text) {
+      const notification = document.createElement('div');
+      notification.className = 'spawn-notification';
+      notification.textContent = text;
+      gameContainer.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.remove();
+      }, 2000);
+    }
+
+    // 显示捕捉特效
+    function showCatchEffect(x, y) {
+      const effect = document.createElement('div');
+      effect.className = 'catch-effect';
+      effect.textContent = '✨';
+      effect.style.left = x + 'px';
+      effect.style.top = y + 'px';
+      gameContainer.appendChild(effect);
+      
+      setTimeout(() => {
+        effect.remove();
+      }, 500);
+    }
+
+    // 全局鼠标移动事件
+    document.addEventListener('mousemove', (e) => {
+      // 检查是否需要切换鼠标穿透状态
+      updateMousePassthrough(e.clientX, e.clientY);
+
+      // 节流上报鼠标位置（约每40ms），供主进程计算宠物逃跑
+      const now = Date.now();
+      if (now - lastMouseReport > 40) {
+        lastMouseReport = now;
+        ipcRenderer.send('mouse-position', { x: e.clientX, y: e.clientY });
+      }
+
+      if (caughtPetId !== null) {
+        const element = pets.get(caughtPetId);
+        if (element) {
+          const x = e.clientX - dragOffset.x;
+          const y = e.clientY - dragOffset.y;
+          element.style.left = x + 'px';
+          element.style.top = y + 'px';
+
+          // 检查是否在回收站上方
+          const binRect = recycleBin.getBoundingClientRect();
+          const petRect = element.getBoundingClientRect();
+          
+          const isOverBin = 
+            petRect.left < binRect.right &&
+            petRect.right > binRect.left &&
+            petRect.top < binRect.bottom &&
+            petRect.bottom > binRect.top;
+
+          if (isOverBin) {
+            recycleBin.classList.add('drag-over');
+          } else {
+            recycleBin.classList.remove('drag-over');
+          }
+        }
+      }
+    });
+
+    // 全局鼠标释放事件
+    document.addEventListener('mouseup', (e) => {
+      if (caughtPetId !== null && e.button === 0) {
+        const element = pets.get(caughtPetId);
+        const binRect = recycleBin.getBoundingClientRect();
+        const petRect = element.getBoundingClientRect();
+        
+        // 检查是否放入回收站
+        const isOverBin = 
+          petRect.left < binRect.right &&
+          petRect.right > binRect.left &&
+          petRect.top < binRect.bottom &&
+          petRect.bottom > binRect.top;
+
+        if (isOverBin) {
+          // 回收宠物
+          ipcRenderer.send('pet-recycled', caughtPetId);
+          showNotification('宠物已回收！+1分');
+        } else {
+          // 释放宠物
+          ipcRenderer.send('pet-released', caughtPetId);
+          element.classList.remove('caught');
+        }
+
+        recycleBin.classList.remove('drag-over');
+        caughtPetId = null;
+        // 释放后恢复穿透状态
+        isAcceptingMouseEvents = false;
+        ipcRenderer.send('set-ignore-mouse-events', true);
+      }
+    });
+
+    // 阻止右键菜单
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+
+    // 防止拖拽时选中文本
+    document.addEventListener('selectstart', (e) => {
+      e.preventDefault();
+    });
+
+    // ===== 宠物定时打招呼（每隔1-3分钟，内容含当前时间） =====
+    const GREETING_POOLS = {
+      // 5-8点
+      dawn: [
+        '早上好呀～现在 {time}，新的一天开始啦！',
+        '{time} 啦，早起的宠物有虫吃～',
+        '早安！已经 {time} 咯，今天也要元气满满！',
+        '清晨好～现在 {time}，空气真新鲜！'
+      ],
+      // 9-11点
+      morning: [
+        '上午好呀！现在 {time}，工作还顺利吗？',
+        '哈喽～{time} 了，记得起来活动一下哦！',
+        '{time} 好！抓不到我吧，嘿嘿～',
+        '上午好！现在是 {time}，喝口水休息下吧～'
+      ],
+      // 11-13点
+      noon: [
+        '中午好！{time} 啦，该吃午饭咯～',
+        '哈喽～现在 {time}，肚子有点饿了呢',
+        '{time} 了，吃完饭记得午休一会儿哦！',
+        '午安！{time}，今天中午吃什么呀？'
+      ],
+      // 14-17点
+      afternoon: [
+        '下午好呀～现在 {time}',
+        '{time} 啦，下午茶时间到！',
+        '嗨～{time} 了，下午也要加油哦！',
+        '现在 {time}，困不困呀？起来走走吧～'
+      ],
+      // 18-22点
+      evening: [
+        '晚上好！{time} 啦，今天辛苦啦～',
+        '哈喽～现在 {time}，吃晚饭了吗？',
+        '{time} 了，晚上有什么安排呀？',
+        '晚上好呀～{time}，陪我玩一会儿吧！'
+      ],
+      // 23-4点
+      night: [
+        '夜深了，现在 {time}，早点休息哦～',
+        '{time} 啦，还没睡吗？注意身体呀',
+        '晚安～已经 {time} 了，我也要困了',
+        '现在 {time}，熬夜对身体不好哦～'
+      ]
+    };
+
+    // 根据当前小时返回问候语池
+    function getGreetingPool() {
+      const h = new Date().getHours();
+      if (h >= 5 && h < 9) return GREETING_POOLS.dawn;
+      if (h >= 9 && h < 11) return GREETING_POOLS.morning;
+      if (h >= 11 && h < 14) return GREETING_POOLS.noon;
+      if (h >= 14 && h < 18) return GREETING_POOLS.afternoon;
+      if (h >= 18 && h < 23) return GREETING_POOLS.evening;
+      return GREETING_POOLS.night;
+    }
+
+    // 格式化当前时间 HH:MM
+    function formatNow() {
+      const d = new Date();
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // 随机挑一只未被抓住、且没在说话的宠物显示气泡
+    function petSpeak() {
+      const candidates = [];
+      pets.forEach((element, id) => {
+        if (!element.classList.contains('caught') &&
+            !element.querySelector('.speech-bubble')) {
+          candidates.push({ id, element, type: element.title });
+        }
+      });
+
+      if (candidates.length > 0) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        const pool = getGreetingPool();
+        let text = pool[Math.floor(Math.random() * pool.length)].replace('{time}', formatNow());
+        // 约一半概率带上宠物自称
+        if (Math.random() < 0.5) {
+          text = `${target.type}：${text}`;
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'speech-bubble';
+        bubble.textContent = text;
+        target.element.appendChild(bubble);
+
+        // 6秒后移除（CSS 动画在5.5秒时淡出）
+        setTimeout(() => bubble.remove(), 6000);
+      }
+
+      schedulePetSpeak();
+    }
+
+    // 安排下一次说话：60-180秒后
+    function schedulePetSpeak() {
+      const delay = (60 + Math.random() * 120) * 1000;
+      setTimeout(petSpeak, delay);
+    }
+
+    // 启动定时问候（首次1-3分钟后）
+    schedulePetSpeak();
+  </script>
+</body>
+</html>
